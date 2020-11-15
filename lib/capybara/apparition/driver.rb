@@ -3,8 +3,8 @@
 require 'uri'
 require 'forwardable'
 require 'capybara/apparition/driver/chrome_client'
-require 'capybara/apparition/driver/launcher'
 require 'capybara/apparition/configuration'
+require 'capybara/apparition/browser/launcher'
 
 module Capybara::Apparition
   class Driver < Capybara::Driver::Base
@@ -64,10 +64,7 @@ module Capybara::Apparition
 
     def client
       @client ||= begin
-        @launcher ||= Browser::Launcher.start(
-          headless: options.fetch(:headless, true),
-          browser_options: browser_options
-        )
+        @launcher ||= Browser::Launcher.start(options)
         ws_url = @launcher.ws_url
         ::Capybara::Apparition::ChromeClient.client(ws_url.to_s)
       end
@@ -216,14 +213,12 @@ module Capybara::Apparition
     end
 
     def add_header(name, value, options = {})
-      browser.add_header({ name => value }, { permanent: true }.merge(options))
+      browser.add_header({ name => value }, **{ permanent: true }.merge(options))
     end
     alias_method :header, :add_header
 
     def response_headers
-      browser.response_headers.each_with_object({}) do |(key, value), hsh|
-        hsh[key.split('-').map(&:capitalize).join('-')] = value
-      end
+      browser.response_headers.transform_keys { |key| key.split('-').map(&:capitalize).join('-') }
     end
 
     def set_cookie(name, value = nil, options = {})
@@ -295,7 +290,7 @@ module Capybara::Apparition
         begin
           input = read.read_nonblock(80) # clear out the read buffer
           puts unless input&.end_with?("\n")
-        rescue EOFError, IO::WaitReadable # rubocop:disable Lint/HandleExceptions
+        rescue EOFError, IO::WaitReadable
           # Ignore problems reading from STDIN.
         end
       end
@@ -446,7 +441,7 @@ module Capybara::Apparition
           end
         end
       when Hash
-        options.each_with_object({}) { |(option, val), hsh| hsh[option.to_s.tr('_', '-')] = val }
+        options.transform_keys { |option| option.to_s.tr('_', '-') }
       else
         raise ArgumentError, 'browser_options must be an Array or a Hash'
       end
@@ -523,7 +518,7 @@ module Capybara::Apparition
         object_cache[arg]
       when Hash
         if (arg['subtype'] == 'node') && arg['objectId']
-          tag_name = arg['description'].split(/[\.#]/, 2)[0]
+          tag_name = arg['description'].split(/[.#]/, 2)[0]
           Capybara::Apparition::Node.new(self, browser.current_page, arg['objectId'], tag_name: tag_name)
         else
           object_cache[arg] = {}

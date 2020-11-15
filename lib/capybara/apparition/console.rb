@@ -8,8 +8,15 @@ module Capybara::Apparition
     end
 
     def log(type, message, **options)
+      return unless @logger
+
       @messages << OpenStruct.new(type: type, message: message, **options)
-      @logger&.puts "#{type}: #{message}"
+      message_to_log = "#{type}: #{message}"
+      if @logger.respond_to?(:puts)
+        @logger.puts(message_to_log)
+      else
+        @logger.info(message_to_log)
+      end
     end
 
     def clear

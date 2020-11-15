@@ -4,13 +4,35 @@ require:
 
 AllCops:
   DisabledByDefault: false
-  TargetRubyVersion: 2.4
+  TargetRubyVersion: 2.5
   Exclude:
     - 'capybara.gemspec'
+    
+############# New Cops #####################
+
+Layout/EmptyLinesAroundAttributeAccessor:
+  Enabled: true
+Layout/SpaceAroundMethodCallOperator:
+  Enabled: true
+Lint/DeprecatedOpenSSLConstant:
+  Enabled: true
+Style/ExponentialNotation:
+  Enabled: true
+Style/SlicingWithRange:
+  Enabled: true
+Lint/MixedRegexpCaptureTypes:
+  Enabled: true
+Style/RedundantRegexpCharacterClass:
+  Enabled: true
+Style/RedundantRegexpEscape:
+  Enabled: true
 
 #################### Lint ################################
 
-Metrics/LineLength:
+Lint/Debugger:
+  Enabled: false
+
+Layout/LineLength:
   Exclude:
     - 'spec/**/*'
   IgnoredPatterns:
@@ -52,7 +74,7 @@ Metrics/ParameterLists:
 Layout/EndAlignment:
   EnforcedStyleAlignWith: variable
 
-Naming/UncommunicativeMethodParamName:
+Naming/MethodParameterName:
   AllowedNames:
     - 'el'
     - 'id'
@@ -109,7 +131,7 @@ Layout/AccessModifierIndentation:
 Layout/CaseIndentation:
   EnforcedStyle: end
 
-Layout/IndentFirstArrayElement:
+Layout/FirstArrayElementIndentation:
   EnforcedStyle: consistent
 
 Security/YAMLLoad:
@@ -176,3 +198,18 @@ RSpec/VerifiedDoubles:
 
 Naming/AccessorMethodName:
   Enabled: false
+
+Lint/RaiseException:
+  Enabled: true
+
+Lint/StructNewOverride:
+  Enabled: true
+
+Style/HashEachMethods:
+  Enabled: true
+
+Style/HashTransformKeys:
+  Enabled: true
+
+Style/HashTransformValues:
+  Enabled: true

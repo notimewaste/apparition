@@ -30,7 +30,7 @@ module Capybara::Apparition
     def find(method, selector)
       js = method == :css ? FIND_CSS_JS : FIND_XPATH_JS
       evaluate_on(js, value: selector).map do |r_o|
-        tag_name = r_o['description'].split(/[\.#]/, 2)[0]
+        tag_name = r_o['description'].split(/[.#]/, 2)[0]
         Capybara::Apparition::Node.new(driver, @page, r_o['objectId'], tag_name: tag_name)
       end
     rescue ::Capybara::Apparition::BrowserError => e
@@ -132,8 +132,10 @@ module Capybara::Apparition
           set_datetime_local(value)
         when 'color'
           set_color(value)
+        when 'range'
+          set_range(value)
         else
-          set_text(value.to_s, { delay: 0 }.merge(options))
+          set_text(value.to_s, **{ delay: 0 }.merge(options))
         end
       elsif tag_name == 'textarea'
         set_text(value.to_s)
@@ -172,12 +174,12 @@ module Capybara::Apparition
       pos = visible_center(allow_scroll: false)
       return true if pos.nil?
 
-      hit_node = @page.element_from_point(pos)
+      hit_node = @page.element_from_point(**pos)
       return true if hit_node.nil?
 
       begin
         return evaluate_on('el => !this.contains(el)', objectId: hit_node['objectId'])
-      rescue WrongWorld # rubocop:disable Lint/HandleExceptions
+      rescue WrongWorld # rubocop:disable Lint/SuppressedException
       end
 
       true
@@ -195,23 +197,23 @@ module Capybara::Apparition
       evaluate_on ELEMENT_DISABLED_JS
     end
 
-    def click(keys = [], button: 'left', count: 1, **options)
-      pos = element_click_pos(options)
+    def click(keys = [], button: 'left', count: 1, delay: 0, **options)
+      pos = element_click_pos(**options)
       raise ::Capybara::Apparition::MouseEventImpossible.new(self, 'args' => ['click']) if pos.nil?
 
-      test = mouse_event_test(pos)
+      test = mouse_event_test(**pos)
       raise ::Capybara::Apparition::MouseEventImpossible.new(self, 'args' => ['click']) if test.nil?
 
       unless options[:x] && options[:y]
         raise ::Capybara::Apparition::MouseEventFailed.new(self, 'args' => ['click', test.selector, pos]) unless test.success
       end
 
-      @page.mouse.click_at pos.merge(button: button, count: count, modifiers: keys)
+      @page.mouse.click_at(**pos.merge(button: button, count: count, modifiers: keys, delay: delay))
       if ENV['DEBUG']
         begin
-          new_pos = element_click_pos(options)
+          new_pos = element_click_pos(**options)
           puts "Element moved from #{pos} to #{new_pos}" unless pos == new_pos
-        rescue WrongWorld # rubocop:disable Lint/HandleExceptions
+        rescue WrongWorld # rubocop:disable Lint/SuppressedException
         end
       end
       # Wait a short time to see if click triggers page load
@@ -231,7 +233,7 @@ module Capybara::Apparition
       pos = visible_center
       raise ::Capybara::Apparition::MouseEventImpossible.new(self, 'args' => ['hover']) if pos.nil?
 
-      @page.mouse.move_to(pos)
+      @page.mouse.move_to(**pos)
     end
 
     EVENTS = {
@@ -488,13 +490,21 @@ module Capybara::Apparition
       DevToolsProtocol::RemoteObject.new(@page, response['result'] || response['object']).value
     end
 
-    def set_text(value, clear: nil, delay: 0, **_unused)
+    def set_text(value, clear: nil, delay: 0, rapid: nil, **_unused)
       value = value.to_s
       if value.empty? && clear.nil?
         evaluate_on CLEAR_ELEMENT_JS
       else
         focus
-        _send_keys(*keys_to_send(value, clear), delay: delay)
+        if (rapid && (value.length >= 6)) || ((value.length > 30) && rapid != false)
+          _send_keys(*keys_to_send(value[0..2], clear), delay: delay)
+          driver.execute_script <<~JS, self, value[0...-3]
+            arguments[0].value = arguments[1]
+          JS
+          _send_keys(*keys_to_send(value[-3..-1], :none), delay: delay)
+        else
+          _send_keys(*keys_to_send(value, clear), delay: delay)
+        end
       end
     end
 
@@ -534,6 +544,10 @@ module Capybara::Apparition
       update_value_js(value.to_s)
     end
 
+    def set_range(value)
+      update_value_js(value.to_s)
+    end
+
     def update_value_js(value)
       evaluate_on(<<~JS, value: value)
         value => {
@@ -557,7 +571,7 @@ module Capybara::Apparition
       r_o = @page.element_from_point(x: x, y: y)
       return nil unless r_o && r_o['objectId']
 
-      tag_name = r_o['description'].split(/[\.#]/, 2)[0]
+      tag_name = r_o['description'].split(/[.#]/, 2)[0]
       hit_node = Capybara::Apparition::Node.new(driver, @page, r_o['objectId'], tag_name: tag_name)
       result = begin
         evaluate_on(<<~JS, objectId: hit_node.id)
@@ -759,7 +773,7 @@ module Capybara::Apparition
     # if an area element, check visibility of relevant image
     VISIBLE_JS = <<~JS
       function(){
-        el = this;
+        let el = this;
         if (el.tagName == 'AREA'){
           const map_name = document.evaluate('./ancestor::map/@name', el, null, XPathResult.STRING_TYPE, null).stringValue;
           el = document.querySelector(`img[usemap='#${map_name}']`);

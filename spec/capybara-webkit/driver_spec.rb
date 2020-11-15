@@ -298,7 +298,7 @@ describe 'Capybara::Apparition::Driver' do
 
     it 'does not double-encode URLs' do
       visit('/hello/world?success=%25true')
-      expect(driver.current_url).to match(/success=\%25true/)
+      expect(driver.current_url).to match(/success=%25true/)
     end
 
     it 'returns the current URL with encoded characters' do
@@ -789,7 +789,7 @@ describe 'Capybara::Apparition::Driver' do
             driver.find_xpath('//input').first.click
             expect(driver.console_messages.first[:message]).to eq 'goodbye'
           end
-        rescue Capybara::ModalNotFound # rubocop:disable Lint/HandleExceptions
+        rescue Capybara::ModalNotFound # rubocop:disable Lint/SuppressedException
         end
       end
 
@@ -849,7 +849,7 @@ describe 'Capybara::Apparition::Driver' do
             driver.find_xpath('//input').first.click
             expect(driver.console_messages.first[:message]).to eq 'goodbye'
           end
-        rescue Capybara::ModalNotFound # rubocop:disable Lint/HandleExceptions
+        rescue Capybara::ModalNotFound # rubocop:disable Lint/SuppressedException
         end
       end
 
@@ -941,7 +941,7 @@ describe 'Capybara::Apparition::Driver' do
             driver.find_xpath('//input').first.click
             expect(driver.console_messages.first[:message]).to eq 'goodbye'
           end
-        rescue Capybara::ModalNotFound # rubocop:disable Lint/HandleExceptions
+        rescue Capybara::ModalNotFound # rubocop:disable Lint/SuppressedException
         end
       end
 
@@ -986,7 +986,7 @@ describe 'Capybara::Apparition::Driver' do
             driver.find_xpath('//input').first.click
             expect(driver.console_messages.first[:message]).to eq 'goodbye'
           end
-        rescue Capybara::ModalNotFound # rubocop:disable Lint/HandleExceptions
+        rescue Capybara::ModalNotFound # rubocop:disable Lint/SuppressedException
         end
       end
 
@@ -1126,7 +1126,7 @@ describe 'Capybara::Apparition::Driver' do
       expect(textarea.value).to eq 'newvalue'
     end
 
-    context '#send_keys' do
+    describe '#send_keys' do
       it 'should support :backspace' do
         input = driver.find_xpath('//input').first
         input.set('dog')
@@ -3096,7 +3096,7 @@ describe 'Capybara::Apparition::Driver' do
 
           # send response
           auth_header = request.find { |h| /Authorization:/i.match? h }
-          if auth_header || request[0].split(/\s+/)[1] =~ %r{^/}
+          if auth_header || request[0].split(/\s+/)[1].to_s.start_with?('/')
             html = "<html><body>D'oh!</body></html>"
             conn.write "HTTP/1.1 200 OK\r\n"
             conn.write "Content-Type:text/html\r\n"

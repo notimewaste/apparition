@@ -2,22 +2,24 @@
 
 module Capybara::Apparition
   module Drag
-    def drag_to(other, delay: 0.1, html5: nil)
+    def drag_to(other, delay: 0.1, html5: nil, drop_modifiers: [])
+      drop_modifiers = Array(drop_modifiers)
+
       driver.execute_script MOUSEDOWN_TRACKER
       scroll_if_needed
       m = @page.mouse
-      m.move_to(visible_center)
+      m.move_to(**visible_center)
       sleep delay
       m.down
       html5 = !driver.evaluate_script(LEGACY_DRAG_CHECK, self) if html5.nil?
       if html5
-        driver.execute_script HTML5_DRAG_DROP_SCRIPT, self, other, delay
-        m.up(other.visible_center)
+        driver.execute_script HTML5_DRAG_DROP_SCRIPT, self, other, delay, drop_modifiers
+        m.up(**other.visible_center)
       else
-        begin
+        @page.keyboard.with_keys(drop_modifiers) do
           other.scroll_if_needed
           sleep delay
-          m.move_to(other.visible_center)
+          m.move_to(**other.visible_center)
           sleep delay
         ensure
           m.up
@@ -31,11 +33,11 @@ module Capybara::Apparition
       raise ::Capybara::Apparition::MouseEventImpossible.new(self, 'args' => ['hover']) if pos.nil?
 
       other_pos = { x: pos[:x] + x, y: pos[:y] + y }
-      raise ::Capybara::Apparition::MouseEventFailed.new(self, 'args' => ['drag', test['selector'], pos]) unless mouse_event_test?(pos)
+      raise ::Capybara::Apparition::MouseEventFailed.new(self, 'args' => ['drag', test['selector'], pos]) unless mouse_event_test?(**pos)
 
-      @page.mouse.move_to(pos).down
+      @page.mouse.move_to(**pos).down
       sleep delay
-      @page.mouse.move_to(other_pos)
+      @page.mouse.move_to(**other_pos)
       sleep delay
       @page.mouse.up
     end
@@ -43,7 +45,7 @@ module Capybara::Apparition
     def drop(*args)
       if args[0].is_a? String
         input = evaluate_on ATTACH_FILE
-        tag_name = input['description'].split(/[\.#]/, 2)[0]
+        tag_name = input['description'].split(/[.#]/, 2)[0]
         input = Capybara::Apparition::Node.new(driver, @page, input['objectId'], tag_name: tag_name)
         input.set(args)
         evaluate_on DROP_FILE, objectId: input.id
@@ -125,9 +127,15 @@ module Capybara::Apparition
     JS
 
     HTML5_DRAG_DROP_SCRIPT = <<~JS
-      var source = arguments[0];
-      var target = arguments[1];
-      var step_delay = arguments[2] * 1000;
+      let source = arguments[0];
+      const target = arguments[1];
+      const step_delay = arguments[2] * 1000;
+      const drop_modifiers = arguments[3];
+      const key_aliases = {
+        'cmd': 'meta',
+        'command': 'meta',
+        'control': 'ctrl',
+      };
 
       function rectCenter(rect){
         return new DOMPoint(
@@ -181,6 +189,9 @@ module Capybara::Apparition
           let targetRect = target.getBoundingClientRect(),
           sourceCenter = rectCenter(source.getBoundingClientRect());
 
+          drop_modifiers.map(key => key_aliases[key] || key)
+                        .forEach(key => opts[key + 'Key'] = true);
+
           // fire 2 dragover events to simulate dragging with a direction
           let entryPoint = pointOnRect(sourceCenter, targetRect);
           let dragOverOpts = Object.assign({clientX: entryPoint.x, clientY: entryPoint.y}, opts);
@@ -196,26 +207,27 @@ module Capybara::Apparition
           dragOverOpts = Object.assign({clientX: targetCenter.x, clientY: targetCenter.y}, opts);
           dragOverEvent = new DragEvent('dragover', dragOverOpts);
           target.dispatchEvent(dragOverEvent);
-          setTimeout(resolve, step_delay, dragOverEvent.defaultPrevented);
+          setTimeout(resolve, step_delay, { drop: dragOverEvent.defaultPrevented, opts: dragOverOpts});
         })
       }
 
-      function dragLeave(drop) {
+      function dragLeave({ drop, opts: dragOverOpts }) {
         return new Promise( resolve => {
-          var dragLeaveEvent = new DragEvent('dragleave', opts);
+          var dragLeaveOptions = { ...opts, ...dragOverOpts };
+          var dragLeaveEvent = new DragEvent('dragleave', dragLeaveOptions);
           target.dispatchEvent(dragLeaveEvent);
           if (drop) {
-            var dropEvent = new DragEvent('drop', opts);
+            var dropEvent = new DragEvent('drop', dragLeaveOptions);
             target.dispatchEvent(dropEvent);
           }
-          var dragEndEvent = new DragEvent('dragend', opts);
+          var dragEndEvent = new DragEvent('dragend', dragLeaveOptions);
           source.dispatchEvent(dragEndEvent);
           setTimeout(resolve, step_delay);
         })
       }
 
-      var dt = new DataTransfer();
-      var opts = { cancelable: true, bubbles: true, dataTransfer: dt };
+      const dt = new DataTransfer();
+      const opts = { cancelable: true, bubbles: true, dataTransfer: dt };
 
       while (source && !source.draggable) {
         source = source.parentElement;

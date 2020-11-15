@@ -22,7 +22,7 @@ module Capybara::Apparition
       # Provides a lot of info - but huge overhead
       # session.command 'Page.setLifecycleEventsEnabled', enabled: true
 
-      page = Page.new(browser, session, id, browser_context_id, options)
+      page = Page.new(browser, session, id, browser_context_id, **options)
 
       session.async_commands 'Network.enable', 'Runtime.enable', 'Security.enable', 'DOM.enable'
       session.async_command 'Security.setIgnoreCertificateErrors', ignore: !!ignore_https_errors
@@ -150,7 +150,7 @@ module Capybara::Apparition
           params[:paperWidth] = @browser.paper_size[:width].to_f
           params[:paperHeight] = @browser.paper_size[:height].to_f
         end
-        command('Page.printToPDF', params)
+        command('Page.printToPDF', **params)
       else
         clip_options = if options[:selector]
           pos = evaluate("document.querySelector('#{options.delete(:selector)}').getBoundingClientRect().toJSON();")
@@ -165,7 +165,7 @@ module Capybara::Apparition
           JS
         end
         options[:clip] = { x: 0, y: 0, scale: scale }.merge(clip_options)
-        command('Page.captureScreenshot', options)
+        command('Page.captureScreenshot', **options)
       end['data']
     end
 
@@ -197,7 +197,7 @@ module Capybara::Apparition
       js_escaped_selector = selector.gsub('\\', '\\\\\\').gsub('"', '\"')
       query = method == :css ? CSS_FIND_JS : XPATH_FIND_JS
       result = _raw_evaluate(format(query, selector: js_escaped_selector))
-      (result || []).map { |r_o| [self, r_o['objectId'], tag_name: r_o['description'].split(/[\.#]/, 2)[0]] }
+      (result || []).map { |r_o| [self, r_o['objectId'], tag_name: r_o['description'].split(/[.#]/, 2)[0]] }
     rescue ::Capybara::Apparition::BrowserError => e
       raise unless /is not a valid (XPath expression|selector)/.match? e.name
 
@@ -284,7 +284,7 @@ module Capybara::Apparition
       @status_code = 0
       navigate_opts = { url: url, transitionType: 'reload' }
       navigate_opts[:referrer] = extra_headers['Referer'] if extra_headers['Referer']
-      response = command('Page.navigate', navigate_opts)
+      response = command('Page.navigate', **navigate_opts)
       raise StatusFailError, 'args' => [url, response['errorText']] if response['errorText']
 
       main_frame.loading(response['loaderId'])
@@ -300,7 +300,7 @@ module Capybara::Apparition
 
     def element_from_point(x:, y:)
       r_o = _raw_evaluate("document.elementFromPoint(#{x}, #{y})", context_id: main_frame.context_id)
-      while r_o && (/^iframe/.match? r_o['description'])
+      while r_o&.[]('description')&.start_with?('iframe')
         frame_node = command('DOM.describeNode', objectId: r_o['objectId'])
         frame = @frames.get(frame_node.dig('node', 'frameId'))
         fo = frame_offset(frame)
@@ -335,7 +335,7 @@ module Capybara::Apparition
       }
       metrics[:screenWidth], metrics[:screenHeight] = *screen if screen
 
-      command('Emulation.setDeviceMetricsOverride', metrics)
+      command('Emulation.setDeviceMetricsOverride', **metrics)
     end
 
     def fullscreen
@@ -374,11 +374,9 @@ module Capybara::Apparition
     end
 
     def update_headers(async: false)
-      method = async ? :async_command : :command
       if (ua = extra_headers.find { |k, _v| /^User-Agent$/i.match? k })
-        send(method, 'Network.setUserAgentOverride', userAgent: ua[1])
+        send(async ? :async_command : :command, 'Network.setUserAgentOverride', userAgent: ua[1])
       end
-      send(method, 'Network.setExtraHTTPHeaders', headers: extra_headers)
       setup_network_interception
     end
 
@@ -386,7 +384,7 @@ module Capybara::Apparition
       if page
         self.url_whitelist = page.url_whitelist.dup
         self.url_blacklist = page.url_blacklist.dup
-        set_viewport(page.viewport_size) if page.viewport_size
+        set_viewport(**page.viewport_size) if page.viewport_size
       end
       self
     end
@@ -509,8 +507,6 @@ module Capybara::Apparition
       end
 
       @session.on 'Runtime.executionContextCreated' do |context:|
-        puts "**** executionContextCreated: #{params}" if ENV['DEBUG']
-        # context = params['context']
         frame_id = context.dig('auxData', 'frameId')
         if context.dig('auxData', 'isDefault') && frame_id
           if (frame = @frames.get(frame_id))
@@ -557,20 +553,6 @@ module Capybara::Apparition
         req&.blocked_params = params if blocked_reason
         if type == 'Document'
           puts "Loading Failed - request: #{request_id} : #{error_text}" if ENV['DEBUG']
-        end
-      end
-
-      @session.on(
-        'Network.requestIntercepted'
-      ) do |request:, interception_id:, auth_challenge: nil, is_navigation_request: nil, **|
-        if auth_challenge
-          if auth_challenge['source'] == 'Proxy'
-            handle_proxy_auth(interception_id)
-          else
-            handle_user_auth(interception_id)
-          end
-        else
-          process_intercepted_request(interception_id, request, is_navigation_request)
         end
       end
 
@@ -645,39 +627,13 @@ module Capybara::Apparition
 
     def setup_network_interception
       async_command 'Network.setCacheDisabled', cacheDisabled: true
-      # async_command 'Fetch.enable', handleAuthRequests: true
-      async_command 'Network.setRequestInterception', patterns: [{ urlPattern: '*' }]
-    end
-
-    def process_intercepted_request(interception_id, request, navigation)
-      headers, url = request.values_at('headers', 'url')
-
-      unless @temp_headers.empty? || navigation # rubocop:disable Style/IfUnlessModifier
-        headers.delete_if { |name, value| @temp_headers[name] == value }
-      end
-      unless @temp_no_redirect_headers.empty? || !navigation
-        headers.delete_if { |name, value| @temp_no_redirect_headers[name] == value }
-      end
-      if (accept = perm_headers.keys.find { |k| /accept/i.match? k })
-        headers[accept] = perm_headers[accept]
-      end
-
-      if @url_blacklist.any? { |r| url.match Regexp.escape(r).gsub('\*', '.*?') }
-        block_request(interception_id, 'Failed')
-      elsif @url_whitelist.any?
-        if @url_whitelist.any? { |r| url.match Regexp.escape(r).gsub('\*', '.*?') }
-          continue_request(interception_id, headers: headers)
-        else
-          block_request(interception_id, 'Failed')
-        end
-      else
-        continue_request(interception_id, headers: headers)
-      end
+      async_command 'Fetch.enable', handleAuthRequests: true
     end
 
     def process_intercepted_fetch(interception_id, request, resource_type)
       navigation = (resource_type == 'Document')
       headers, url = request.values_at('headers', 'url')
+      headers = headers.merge(extra_headers)
 
       unless @temp_headers.empty? || navigation # rubocop:disable Style/IfUnlessModifier
         headers.delete_if { |name, value| @temp_headers[name] == value }
@@ -704,14 +660,6 @@ module Capybara::Apparition
                       requestId: interception_id,
                       headers: headers.map { |k, v| { name: k, value: v } })
       end
-    end
-
-    def continue_request(id, **params)
-      async_command 'Network.continueInterceptedRequest', interceptionId: id, **params
-    end
-
-    def block_request(id, reason)
-      async_command 'Network.continueInterceptedRequest', errorReason: reason, interceptionId: id
     end
 
     def go_history(delta)

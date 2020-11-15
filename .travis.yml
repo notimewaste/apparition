@@ -1,10 +1,8 @@
 language: ruby
-dist: trusty
 rvm:
-  - 2.6
+  - 2.7
   - 2.5
-  - 2.4
-  - jruby-9.2.8.0
+  - jruby-9.2.11.1
 gemfile:
   - Gemfile
 env:
@@ -12,11 +10,7 @@ env:
     - JAVA_OPTS=-Djava.security.egd=file:/dev/urandom
 
 addons:
-  apt:
-    sources:
-      - google-chrome
-    packages:
-      - google-chrome-stable
+  chrome: stable
 
 cache:
   bundler: true
@@ -24,12 +18,12 @@ cache:
 matrix:
   include:
     - gemfile: gemfiles/Gemfile.base
-      rvm: 2.4
+      rvm: 2.5
     - gemfile: gemfiles/Gemfile.edge
-      rvm: 2.6
+      rvm: 2.7
   allow_failures:
     - gemfile: gemfiles/Gemfile.edge
-    - rvm: jruby-9.2.8.0
+    - rvm: jruby-9.2.11.1
 
 before_install:
   - gem update --system

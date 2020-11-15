@@ -261,7 +261,7 @@ describe Capybara::Session do
         expect(element.value).to match(/^C:\\fakepath\\a_test_pathname/)
       end
 
-      it'handles foreign characters' do
+      it 'handles foreign characters' do
         element = @session.find(:css, '#change_me')
         element.set 'Retourestraße'
         expect(element.value).to eq('Retourestraße')
@@ -470,16 +470,6 @@ describe Capybara::Session do
             @session.find(:css, '#one').click
           end.to raise_error(Capybara::Apparition::MouseEventFailed) { |error|
             expect(error.position).to eq([200, 200])
-          }
-        end
-
-        it 'clicks in the centre of an element within the viewport, if part is outside the viewport' do
-          @session.current_window.resize_to(200, 200)
-
-          expect do
-            @session.find(:css, '#one').click
-          end.to raise_error(Capybara::Apparition::MouseEventFailed) { |error|
-            expect(error.position.first).to eq(150)
           }
         end
       end
